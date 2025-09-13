@@ -28,12 +28,15 @@
   <video id="localVideo" autoplay muted playsinline></video>
   <video id="remoteVideo" autoplay playsinline></video>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/webxr/ARButton.js"></script>
+  <!-- PeerJS -->
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
 
-  <script>
-    // DOM elements
+  <!-- Three.js + ARButton as ES modules -->
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js';
+    import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/webxr/ARButton.js';
+
+    // --- PeerJS Setup ---
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
     const myIdSpan = document.getElementById('myId');
@@ -42,7 +45,6 @@
 
     let localStream;
 
-    // Capture camera
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
         localVideo.srcObject = stream;
@@ -50,21 +52,25 @@
       })
       .catch(err => alert('Camera access error: ' + err));
 
-    // Human-friendly Peer ID (simple example)
-    const peerId = "Dune-" + Math.floor(Math.random()*10000);
+    // Human-friendly Peer ID
+    const duneWords = ["Arrakis","Fremen","Sietch","ShaiHulud","Spice","BeneGesserit","Kwizatz","Harkonnen","Atreides","MuadDib"];
+    const nigeriaPlaces = ["Lagos","Abuja","Kano","Ibadan","PortHarcourt","Enugu","Kaduna","Jos","Benin","Yola"];
+    function randomPeerId() {
+      const word1 = duneWords[Math.floor(Math.random()*duneWords.length)];
+      const word2 = nigeriaPlaces[Math.floor(Math.random()*nigeriaPlaces.length)];
+      return `${word1}-${word2}`;
+    }
+
+    const peerId = randomPeerId();
     const peer = new Peer(peerId);
 
     peer.on('open', id => { myIdSpan.textContent = id; });
 
-    // Handle incoming calls
     peer.on('call', call => {
       call.answer(localStream);
-      call.on('stream', remoteStream => {
-        remoteVideo.srcObject = remoteStream;
-      });
+      call.on('stream', remoteStream => { remoteVideo.srcObject = remoteStream; });
     });
 
-    // Call button
     callButton.onclick = () => {
       const remoteId = peerIdInput.value.trim();
       if(!remoteId) return alert('Enter Peer ID');
@@ -72,7 +78,7 @@
       call.on('stream', stream => { remoteVideo.srcObject = stream; });
     };
 
-    // --- Three.js / WebXR setup ---
+    // --- Three.js / WebXR Setup ---
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -82,7 +88,7 @@
 
     document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
 
-    // Create a plane for remote video
+    // Remote video plane
     const videoTexture = new THREE.VideoTexture(remoteVideo);
     const geometry = new THREE.PlaneGeometry(1, 0.6);
     const material = new THREE.MeshBasicMaterial({ map: videoTexture });
@@ -90,7 +96,7 @@
     remotePlane.position.set(0, 0, -2); // 2 meters in front
     scene.add(remotePlane);
 
-    // Optional: small plane for local video
+    // Local video plane (small preview)
     const localTexture = new THREE.VideoTexture(localVideo);
     const localGeometry = new THREE.PlaneGeometry(0.3, 0.18);
     const localMaterial = new THREE.MeshBasicMaterial({ map: localTexture });
@@ -98,22 +104,13 @@
     localPlane.position.set(-0.5, -0.5, -1);
     scene.add(localPlane);
 
-    // Lighting (optional)
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
     scene.add(light);
 
-    // Animation loop
-    function animate() {
-      renderer.setAnimationLoop(render);
-    }
-
-    function render() {
-      renderer.render(scene, camera);
-    }
-
+    function animate() { renderer.setAnimationLoop(render); }
+    function render() { renderer.render(scene, camera); }
     animate();
 
-    // Handle resize
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
