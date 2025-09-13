@@ -5,7 +5,7 @@
   <title>AR Video Call Demo</title>
   <style>
     body { margin: 0; font-family: sans-serif; }
-    video { display: none; } /* hide video elements, we'll use textures */
+    video { display: none; } /* hide video elements, textures used in AR */
     #peerUI {
       position: absolute;
       top: 10px;
@@ -45,6 +45,7 @@
 
     let localStream;
 
+    // Get camera/mic
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
         localVideo.srcObject = stream;
@@ -52,7 +53,7 @@
       })
       .catch(err => alert('Camera access error: ' + err));
 
-    // Human-friendly Peer ID
+    // Generate human-friendly Peer ID (Dune + Nigeria)
     const duneWords = ["Arrakis","Fremen","Sietch","ShaiHulud","Spice","BeneGesserit","Kwizatz","Harkonnen","Atreides","MuadDib"];
     const nigeriaPlaces = ["Lagos","Abuja","Kano","Ibadan","PortHarcourt","Enugu","Kaduna","Jos","Benin","Yola"];
     function randomPeerId() {
@@ -78,7 +79,7 @@
       call.on('stream', stream => { remoteVideo.srcObject = stream; });
     };
 
-    // --- Three.js / WebXR Setup ---
+    // --- Three.js / WebXR ---
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -90,27 +91,26 @@
 
     // Remote video plane
     const videoTexture = new THREE.VideoTexture(remoteVideo);
-    const geometry = new THREE.PlaneGeometry(1, 0.6);
-    const material = new THREE.MeshBasicMaterial({ map: videoTexture });
-    const remotePlane = new THREE.Mesh(geometry, material);
-    remotePlane.position.set(0, 0, -2); // 2 meters in front
+    const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture });
+    const videoGeometry = new THREE.PlaneGeometry(1, 0.6);
+    const remotePlane = new THREE.Mesh(videoGeometry, videoMaterial);
+    remotePlane.position.set(0, 0, -2);
     scene.add(remotePlane);
 
-    // Local video plane (small preview)
+    // Local preview plane
     const localTexture = new THREE.VideoTexture(localVideo);
-    const localGeometry = new THREE.PlaneGeometry(0.3, 0.18);
-    const localMaterial = new THREE.MeshBasicMaterial({ map: localTexture });
-    const localPlane = new THREE.Mesh(localGeometry, localMaterial);
+    const localPlane = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.18), new THREE.MeshBasicMaterial({ map: localTexture }));
     localPlane.position.set(-0.5, -0.5, -1);
     scene.add(localPlane);
 
+    // Lighting
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
     scene.add(light);
 
-    function animate() { renderer.setAnimationLoop(render); }
-    function render() { renderer.render(scene, camera); }
-    animate();
+    // Render loop
+    renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
 
+    // Resize handling
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
