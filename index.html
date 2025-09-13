@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AR Video Call Demo</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    video { display: none; } /* hide video elements, we'll use textures */
+    #peerUI {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(255,255,255,0.8);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    input, button { margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <div id="peerUI">
+    <p>Your Peer ID: <span id="myId">...</span></p>
+    <input type="text" id="peerIdInput" placeholder="Peer ID">
+    <button id="callButton">Call</button>
+  </div>
+
+  <video id="localVideo" autoplay muted playsinline></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/webxr/ARButton.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
+
+  <script>
+    // DOM elements
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const myIdSpan = document.getElementById('myId');
+    const peerIdInput = document.getElementById('peerIdInput');
+    const callButton = document.getElementById('callButton');
+
+    let localStream;
+
+    // Capture camera
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        localVideo.srcObject = stream;
+        localStream = stream;
+      })
+      .catch(err => alert('Camera access error: ' + err));
+
+    // Human-friendly Peer ID (simple example)
+    const peerId = "Dune-" + Math.floor(Math.random()*10000);
+    const peer = new Peer(peerId);
+
+    peer.on('open', id => { myIdSpan.textContent = id; });
+
+    // Handle incoming calls
+    peer.on('call', call => {
+      call.answer(localStream);
+      call.on('stream', remoteStream => {
+        remoteVideo.srcObject = remoteStream;
+      });
+    });
+
+    // Call button
+    callButton.onclick = () => {
+      const remoteId = peerIdInput.value.trim();
+      if(!remoteId) return alert('Enter Peer ID');
+      const call = peer.call(remoteId, localStream);
+      call.on('stream', stream => { remoteVideo.srcObject = stream; });
+    };
+
+    // --- Three.js / WebXR setup ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+
+    // Create a plane for remote video
+    const videoTexture = new THREE.VideoTexture(remoteVideo);
+    const geometry = new THREE.PlaneGeometry(1, 0.6);
+    const material = new THREE.MeshBasicMaterial({ map: videoTexture });
+    const remotePlane = new THREE.Mesh(geometry, material);
+    remotePlane.position.set(0, 0, -2); // 2 meters in front
+    scene.add(remotePlane);
+
+    // Optional: small plane for local video
+    const localTexture = new THREE.VideoTexture(localVideo);
+    const localGeometry = new THREE.PlaneGeometry(0.3, 0.18);
+    const localMaterial = new THREE.MeshBasicMaterial({ map: localTexture });
+    const localPlane = new THREE.Mesh(localGeometry, localMaterial);
+    localPlane.position.set(-0.5, -0.5, -1);
+    scene.add(localPlane);
+
+    // Lighting (optional)
+    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+    scene.add(light);
+
+    // Animation loop
+    function animate() {
+      renderer.setAnimationLoop(render);
+    }
+
+    function render() {
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
