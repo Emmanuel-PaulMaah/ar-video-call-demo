@@ -16,6 +16,19 @@
       border-radius: 5px;
     }
     input, button { margin-top: 5px; }
+
+    /* Local preview fixed in bottom-right corner */
+    #localVideo {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      width: 120px;
+      height: auto;
+      border: 2px solid white;
+      border-radius: 6px;
+      z-index: 20;
+      display: block; /* visible */
+    }
   </style>
 </head>
 <body>
@@ -96,12 +109,6 @@
     const remotePlane = new THREE.Mesh(videoGeometry, videoMaterial);
     remotePlane.position.set(0, 0, -2);
     scene.add(remotePlane);
-
-    // Local preview plane
-    const localTexture = new THREE.VideoTexture(localVideo);
-    const localPlane = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.18), new THREE.MeshBasicMaterial({ map: localTexture }));
-    localPlane.position.set(-0.5, -0.5, -1);
-    scene.add(localPlane);
 
     // Lighting
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
