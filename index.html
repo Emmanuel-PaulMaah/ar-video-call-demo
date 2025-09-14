@@ -4,44 +4,108 @@
   <meta charset="UTF-8">
   <title>AR Video Call Demo</title>
   <style>
-    body { margin: 0; overflow: hidden; }
-    video { display: none; } /* hide HTML video, only used as texture */
+    body { margin: 0; font-family: sans-serif; }
+    video { display: none; }
+    #peerUI {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(255,255,255,0.8);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    input, button { margin-top: 5px; }
   </style>
 </head>
 <body>
+  <div id="peerUI">
+    <p>Your Peer ID: <span id="myId">...</span></p>
+    <input type="text" id="peerIdInput" placeholder="Peer ID">
+    <button id="callButton">Call</button>
+  </div>
+
+  <video id="localVideo" autoplay muted playsinline></video>
   <video id="remoteVideo" autoplay playsinline></video>
-  <video id="localVideo" autoplay playsinline muted></video>
 
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/jsm/webxr/ARButton.js"></script>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <!-- PeerJS -->
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
 
-  <script>
-    let camera, scene, renderer;
-    let videoPlane;
-    let remoteVideo = document.getElementById("remoteVideo");
-    let localVideo = document.getElementById("localVideo");
+  <!-- Three.js + ARButton as ES modules -->
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js';
+    import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/webxr/ARButton.js';
 
-    // ========== AR Scene Setup ==========
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera();
+    // --- PeerJS Setup ---
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const myIdSpan = document.getElementById('myId');
+    const peerIdInput = document.getElementById('peerIdInput');
+    const callButton = document.getElementById('callButton');
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    let localStream;
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        localVideo.srcObject = stream;
+        localStream = stream;
+      })
+      .catch(err => alert('Camera access error: ' + err));
+
+    const duneWords = ["Arrakis","Fremen","Sietch","ShaiHulud","Spice","BeneGesserit","Kwizatz","Harkonnen","Atreides","MuadDib"];
+    const nigeriaPlaces = ["Lagos","Abuja","Kano","Ibadan","PortHarcourt","Enugu","Kaduna","Jos","Benin","Yola"];
+    function randomPeerId() {
+      const word1 = duneWords[Math.floor(Math.random()*duneWords.length)];
+      const word2 = nigeriaPlaces[Math.floor(Math.random()*nigeriaPlaces.length)];
+      return `${word1}-${word2}`;
+    }
+
+    const peerId = randomPeerId();
+    const peer = new Peer(peerId);
+
+    peer.on('open', id => { myIdSpan.textContent = id; });
+
+    peer.on('call', call => {
+      call.answer(localStream);
+      call.on('stream', remoteStream => { remoteVideo.srcObject = remoteStream; });
+    });
+
+    callButton.onclick = () => {
+      const remoteId = peerIdInput.value.trim();
+      if(!remoteId) return alert('Enter Peer ID');
+      const call = peer.call(remoteId, localStream);
+      call.on('stream', stream => { remoteVideo.srcObject = stream; });
+    };
+
+    // --- Three.js / WebXR ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
 
-    document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ["hit-test"] }));
+    document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
 
-    // ========== Video Texture ==========
+    // Remote video plane
     const videoTexture = new THREE.VideoTexture(remoteVideo);
-    const geometry = new THREE.PlaneGeometry(1, 0.75); // 4:3 aspect
-    const material = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide });
-    videoPlane = new THREE.Mesh(geometry, material);
-    videoPlane.position.set(0, 1.5, -2);
-    scene.add(videoPlane);
+    const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture });
+    const videoGeometry = new THREE.PlaneGeometry(1, 0.6);
+    const remotePlane = new THREE.Mesh(videoGeometry, videoMaterial);
+    remotePlane.position.set(0, 0, -2);
+    scene.add(remotePlane);
 
-    // ========== Drag Controls ==========
+    // Local preview plane
+    const localTexture = new THREE.VideoTexture(localVideo);
+    const localPlane = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.18), new THREE.MeshBasicMaterial({ map: localTexture }));
+    localPlane.position.set(-0.5, -0.5, -1);
+    scene.add(localPlane);
+
+    // Lighting
+    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+    scene.add(light);
+
+    // --- Drag Controls (touch to drag remote video) ---
     const raycaster = new THREE.Raycaster();
     const tapPosition = new THREE.Vector2();
     let selectedObject = null;
@@ -55,7 +119,7 @@
     window.addEventListener("touchstart", (event) => {
       getTapPosition(event);
       raycaster.setFromCamera(tapPosition, camera);
-      const intersects = raycaster.intersectObjects([videoPlane], true);
+      const intersects = raycaster.intersectObjects([remotePlane], true);
       if (intersects.length > 0) {
         selectedObject = intersects[0].object;
       }
@@ -66,8 +130,8 @@
       getTapPosition(event);
       raycaster.setFromCamera(tapPosition, camera);
 
-      // Move along a floor plane (y = 1.5 for eye level)
-      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.5);
+      // Move along a plane at ~eye level
+      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -2);
       const newPos = new THREE.Vector3();
       raycaster.ray.intersectPlane(plane, newPos);
 
@@ -80,39 +144,13 @@
       selectedObject = null;
     });
 
-    // ========== WebRTC Setup ==========
-    const peer = new Peer();
+    // Render loop
+    renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
 
-    peer.on("open", id => {
-      console.log("My Peer ID:", id);
-      alert("Your Peer ID: " + id);
-    });
-
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localVideo.srcObject = stream;
-
-        peer.on("call", call => {
-          call.answer(stream);
-          call.on("stream", remoteStream => {
-            remoteVideo.srcObject = remoteStream;
-          });
-        });
-
-        // For quick testing: enter remote ID manually
-        const remoteId = prompt("Enter remote peer ID to call (or leave blank to wait):");
-        if (remoteId) {
-          const call = peer.call(remoteId, stream);
-          call.on("stream", remoteStream => {
-            remoteVideo.srcObject = remoteStream;
-          });
-        }
-      })
-      .catch(err => console.error("getUserMedia error:", err));
-
-    // ========== Animation Loop ==========
-    renderer.setAnimationLoop(() => {
-      renderer.render(scene, camera);
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
     });
   </script>
 </body>
