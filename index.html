@@ -5,7 +5,7 @@
   <title>AR Video Call Demo</title>
   <style>
     body { margin: 0; font-family: sans-serif; }
-    video { display: none; }
+    video { display: none; } /* hide video elements, textures used in AR */
     #peerUI {
       position: absolute;
       top: 10px;
@@ -45,6 +45,7 @@
 
     let localStream;
 
+    // Get camera/mic
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
         localVideo.srcObject = stream;
@@ -52,6 +53,7 @@
       })
       .catch(err => alert('Camera access error: ' + err));
 
+    // Generate human-friendly Peer ID (Dune + Nigeria)
     const duneWords = ["Arrakis","Fremen","Sietch","ShaiHulud","Spice","BeneGesserit","Kwizatz","Harkonnen","Atreides","MuadDib"];
     const nigeriaPlaces = ["Lagos","Abuja","Kano","Ibadan","PortHarcourt","Enugu","Kaduna","Jos","Benin","Yola"];
     function randomPeerId() {
@@ -105,12 +107,16 @@
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
     scene.add(light);
 
-    // --- Drag Controls (touch to drag remote video) ---
+    // --- Drag + Resize Controls (touch to drag/resize remote video) ---
     const raycaster = new THREE.Raycaster();
     const tapPosition = new THREE.Vector2();
     let selectedObject = null;
     let dragOffset = new THREE.Vector3();
     let dragPlane = new THREE.Plane();
+
+    let isResizing = false;
+    let initialPinchDistance = 0;
+    let initialScale = 1;
 
     function getTapPosition(event) {
       const touch = event.touches[0];
@@ -118,41 +124,66 @@
       tapPosition.y = -(touch.clientY / window.innerHeight) * 2 + 1;
     }
 
+    function getPinchDistance(event) {
+      const dx = event.touches[0].clientX - event.touches[1].clientX;
+      const dy = event.touches[0].clientY - event.touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
     window.addEventListener("touchstart", (event) => {
-      getTapPosition(event);
-      raycaster.setFromCamera(tapPosition, camera);
-      const intersects = raycaster.intersectObjects([remotePlane], true);
-      if (intersects.length > 0) {
-        selectedObject = intersects[0].object;
+      if (event.touches.length === 1) {
+        // --- Drag start ---
+        getTapPosition(event);
+        raycaster.setFromCamera(tapPosition, camera);
+        const intersects = raycaster.intersectObjects([remotePlane], true);
+        if (intersects.length > 0) {
+          selectedObject = intersects[0].object;
 
-        // Define a plane parallel to the camera at the object's depth
-        const camNormal = new THREE.Vector3();
-        camera.getWorldDirection(camNormal);
-        dragPlane.setFromNormalAndCoplanarPoint(camNormal, selectedObject.position);
+          // Define a plane parallel to the camera at the object's depth
+          const camNormal = new THREE.Vector3();
+          camera.getWorldDirection(camNormal);
+          dragPlane.setFromNormalAndCoplanarPoint(camNormal, selectedObject.position);
 
-        // Save offset so it doesn’t snap
-        dragOffset.subVectors(selectedObject.position, intersects[0].point);
+          // Save offset so it doesn’t snap
+          dragOffset.subVectors(selectedObject.position, intersects[0].point);
+        }
+      } else if (event.touches.length === 2) {
+        // --- Resize start ---
+        isResizing = true;
+        initialPinchDistance = getPinchDistance(event);
+        initialScale = remotePlane.scale.x; // uniform scaling
       }
     });
 
     window.addEventListener("touchmove", (event) => {
-      if (!selectedObject) return;
-      getTapPosition(event);
-      raycaster.setFromCamera(tapPosition, camera);
+      if (event.touches.length === 1 && selectedObject) {
+        // --- Dragging ---
+        getTapPosition(event);
+        raycaster.setFromCamera(tapPosition, camera);
 
-      const hitPoint = new THREE.Vector3();
-      if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
-        selectedObject.position.copy(hitPoint.add(dragOffset));
+        const hitPoint = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
+          selectedObject.position.copy(hitPoint.add(dragOffset));
+        }
+      } else if (event.touches.length === 2 && isResizing) {
+        // --- Resizing ---
+        const newDistance = getPinchDistance(event);
+        const scaleFactor = newDistance / initialPinchDistance;
+        remotePlane.scale.setScalar(initialScale * scaleFactor);
       }
     });
 
-    window.addEventListener("touchend", () => {
-      selectedObject = null;
+    window.addEventListener("touchend", (event) => {
+      if (event.touches.length === 0) {
+        selectedObject = null;
+        isResizing = false;
+      }
     });
 
     // Render loop
     renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
 
+    // Resize handling
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
