@@ -109,6 +109,8 @@
     const raycaster = new THREE.Raycaster();
     const tapPosition = new THREE.Vector2();
     let selectedObject = null;
+    let dragOffset = new THREE.Vector3();
+    let dragPlane = new THREE.Plane();
 
     function getTapPosition(event) {
       const touch = event.touches[0];
@@ -122,6 +124,14 @@
       const intersects = raycaster.intersectObjects([remotePlane], true);
       if (intersects.length > 0) {
         selectedObject = intersects[0].object;
+
+        // Define a plane parallel to the camera at the object's depth
+        const camNormal = new THREE.Vector3();
+        camera.getWorldDirection(camNormal);
+        dragPlane.setFromNormalAndCoplanarPoint(camNormal, selectedObject.position);
+
+        // Save offset so it doesn’t snap
+        dragOffset.subVectors(selectedObject.position, intersects[0].point);
       }
     });
 
@@ -130,13 +140,9 @@
       getTapPosition(event);
       raycaster.setFromCamera(tapPosition, camera);
 
-      // Move along a plane at ~eye level
-      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -2);
-      const newPos = new THREE.Vector3();
-      raycaster.ray.intersectPlane(plane, newPos);
-
-      if (newPos) {
-        selectedObject.position.copy(newPos);
+      const hitPoint = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
+        selectedObject.position.copy(hitPoint.add(dragOffset));
       }
     });
 
